@@ -14,7 +14,7 @@ app.use(express.json());
 const PORT = 5000;
 
 // ✅ MongoDB Connection
-mongoose.connect('mongodb://127.0.0.1:27017/logsentinel')
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ Connected to MongoDB'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
