@@ -1,4 +1,3 @@
-// ✅ index.js (with improved register error handling)
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -25,7 +24,8 @@ const alertSchema = new mongoose.Schema({
   ip: String,
   failedAttempts: Number,
   withinSeconds: String,
-  timestamp: { type: Date, default: Date.now }
+  timestamp: { type: Date, default: Date.now },
+  userEmail: String // 👈 NEW
 });
 const Alert = mongoose.model('Alert', alertSchema);
 
@@ -50,7 +50,7 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ✅ Auth Routes
+// ✅  Routes
 app.post('/register', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -89,12 +89,12 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ✅ Public
+// ✅ Public route
 app.get('/', (req, res) => {
   res.send('LogSentinel backend is running');
 });
 
-// ✅ Upload & Analyze
+// ✅ Upload & Analyze Logs (public)
 app.post('/upload-log', upload.single('logfile'), async (req, res) => {
   const uploadedFile = req.file;
   const userEmail = req.body.email || process.env.EMAIL_TO;
@@ -134,7 +134,8 @@ app.post('/upload-log', upload.single('logfile'), async (req, res) => {
         const alert = await Alert.create({
           ip,
           failedAttempts: sorted.length,
-          withinSeconds: span.toFixed(2)
+          withinSeconds: span.toFixed(2),
+          userEmail // 👈 store alert owner
         });
 
         const subject = `🚨 Suspicious IP: ${ip}`;
@@ -154,11 +155,12 @@ app.post('/upload-log', upload.single('logfile'), async (req, res) => {
   });
 });
 
-// ✅ View Alerts (protected)
+// ✅ View User-Specific Alerts
 app.get('/alerts', authMiddleware, async (req, res) => {
   try {
     const { ip, from, to } = req.query;
-    const filter = {};
+    const filter = { userEmail: req.user.email }; // 👈 restrict to current user
+
     if (ip) filter.ip = ip;
     if (from || to) {
       filter.timestamp = {};
