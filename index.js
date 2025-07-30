@@ -1,4 +1,4 @@
-// ✅ index.js (updated with JWT-based auth)
+// ✅ index.js (with improved register error handling)
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -15,11 +15,12 @@ app.use(cors());
 app.use(express.json());
 const PORT = 5000;
 
+// ✅ MongoDB Connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ Connected to MongoDB'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// ✅ SCHEMAS
+// ✅ Schemas
 const alertSchema = new mongoose.Schema({
   ip: String,
   failedAttempts: Number,
@@ -30,13 +31,13 @@ const Alert = mongoose.model('Alert', alertSchema);
 
 const userSchema = new mongoose.Schema({
   email: String,
-  password: String // hashed
+  password: String
 });
 const User = mongoose.model('User', userSchema);
 
+// ✅ Middleware
 const upload = multer({ dest: 'uploads/' });
 
-// ✅ JWT Middleware
 function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ message: 'Unauthorized' });
@@ -51,33 +52,49 @@ function authMiddleware(req, res, next) {
 
 // ✅ Auth Routes
 app.post('/register', async (req, res) => {
-  const { email, password } = req.body;
-  const hashed = await bcrypt.hash(password, 10);
-  const exists = await User.findOne({ email });
-  if (exists) return res.status(400).json({ message: 'User already exists' });
+  try {
+    const { email, password } = req.body;
+    console.log("📨 Register payload:", req.body);
 
-  await User.create({ email, password: hashed });
-  res.json({ message: 'User registered' });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Missing email or password' });
+    }
+
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ message: 'User already exists' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    await User.create({ email, password: hashed });
+
+    res.json({ message: 'User registered' });
+  } catch (err) {
+    console.error('❌ Registration error:', err.message);
+    res.status(500).json({ message: 'Server error during registration' });
+  }
 });
 
 app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
-  if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.status(401).json({ message: 'Invalid credentials' });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ message: 'Invalid credentials' });
 
-  const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-  res.json({ token });
+    const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ message: 'Login error' });
+  }
 });
 
-// ✅ Public Route
+// ✅ Public
 app.get('/', (req, res) => {
   res.send('LogSentinel backend is running');
 });
 
-// ✅ Upload & Detect Suspicious Log
+// ✅ Upload & Analyze
 app.post('/upload-log', upload.single('logfile'), async (req, res) => {
   const uploadedFile = req.file;
   const userEmail = req.body.email || process.env.EMAIL_TO;
@@ -114,9 +131,15 @@ app.post('/upload-log', upload.single('logfile'), async (req, res) => {
     for (let i = 0; i <= sorted.length - 5; i++) {
       const span = (sorted[i + 4] - sorted[i]) / 1000;
       if (span <= 60) {
-        const alert = await Alert.create({ ip, failedAttempts: sorted.length, withinSeconds: span.toFixed(2) });
+        const alert = await Alert.create({
+          ip,
+          failedAttempts: sorted.length,
+          withinSeconds: span.toFixed(2)
+        });
+
         const subject = `🚨 Suspicious IP: ${ip}`;
         const body = `IP: ${ip}\nAttempts: ${sorted.length}\nWindow: ${span.toFixed(2)}s`;
+
         await sendMail(userEmail, subject, body);
         suspiciousIPs.push(alert);
         break;
@@ -124,10 +147,14 @@ app.post('/upload-log', upload.single('logfile'), async (req, res) => {
     }
   }
 
-  res.json({ message: 'Log analyzed', suspiciousIPs, preview: lines.slice(0, 10) });
+  res.json({
+    message: 'Log analyzed',
+    suspiciousIPs,
+    preview: lines.slice(0, 10)
+  });
 });
 
-// ✅ Protected Alert Viewing
+// ✅ View Alerts (protected)
 app.get('/alerts', authMiddleware, async (req, res) => {
   try {
     const { ip, from, to } = req.query;
@@ -142,6 +169,7 @@ app.get('/alerts', authMiddleware, async (req, res) => {
         filter.timestamp.$lte = end;
       }
     }
+
     const alerts = await Alert.find(filter).sort({ timestamp: -1 });
     res.json({ count: alerts.length, alerts });
   } catch (err) {
@@ -149,5 +177,7 @@ app.get('/alerts', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Start server
-app.listen(PORT, () => console.log(`🚀 Server live at http://localhost:${PORT}`));
+// ✅ Start Server
+app.listen(PORT, () => {
+  console.log(`🚀 Server live at http://localhost:${PORT}`);
+});
