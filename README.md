@@ -22,7 +22,5 @@ This is the backend API for **LogSentinel**, a log monitoring and suspicious act
 | Receive email alerts       | ✅ Yes        | ✅ Yes         |
 | View alert list (`/alerts`) | ❌ No         | ✅ Yes         |
 
----
 
-## 📂 Project Structure
 
